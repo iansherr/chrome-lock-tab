@@ -3,7 +3,7 @@ chrome.action.onClicked.addListener((tab) => {
 
   chrome.storage.local.get(key, ({ [key]: isLocked }) => {
     chrome.storage.sync.get("options", ({ options = {} }) => {
-      setIsLocked(tab, !isLocked, options.showTabIcon);
+      setIsLocked(tab, !isLocked, options);
     });
   });
 });
@@ -21,7 +21,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.pinned) {
     chrome.storage.sync.get("options", ({ options = {} }) => {
       if (options.autoLockPinnedTabs === undefined || options.autoLockPinnedTabs) {
-        setIsLocked(tab, true, options.showTabIcon);
+        setIsLocked(tab, true, options);
       }
     });
   }
@@ -29,7 +29,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 let currentColorScheme = "light";
 
-function setIsLocked(tab, isLocked, showTabIcon) {
+function setIsLocked(tab, isLocked, options = {}) {
   let key = `tab_${tab.id}`;
 
   chrome.storage.local.set({ [key]: isLocked }, async () => {
@@ -37,7 +37,9 @@ function setIsLocked(tab, isLocked, showTabIcon) {
       message: "setIsLocked",
       data: {
         isLocked: isLocked,
-        showTabIcon: showTabIcon === undefined ? true : !!showTabIcon,
+        showTabIcon: options.showTabIcon === undefined ? true : !!options.showTabIcon,
+        openLinksInNewTab: !!options.openLinksInNewTab,
+        allowFormSubmit: !!options.allowFormSubmit,
       },
     });
 
@@ -61,7 +63,7 @@ function init(tab, data) {
 
   chrome.storage.sync.get("options", ({ options = {} }) => {
     if (tab.pinned && (options.autoLockPinnedTabs === undefined || options.autoLockPinnedTabs)) {
-      setIsLocked(tab, true, options.showTabIcon);
+      setIsLocked(tab, true, options);
       return;
     }
 
@@ -72,7 +74,7 @@ function init(tab, data) {
 
     let rulesEnable = parseRules(options.rulesEnable);
     if (rulesEnable.some((rule) => new RegExp(rule, "i").test(tab.url))) {
-      setIsLocked(tab, true, options.showTabIcon);
+      setIsLocked(tab, true, options);
     }
   });
 }

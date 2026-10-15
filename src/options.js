@@ -8,6 +8,8 @@
     chrome.storage.sync.get("options", ({ options = {} }) => {
       document.getElementById("show-tab-icon").checked = options.showTabIcon === undefined ? true : !!options.showTabIcon;
       document.getElementById("auto-lock-pinned-tabs").checked = options.autoLockPinnedTabs === undefined ? true : !!options.autoLockPinnedTabs;
+      document.getElementById("open-links-in-new-tab").checked = !!options.openLinksInNewTab;
+      document.getElementById("allow-form-submit").checked = !!options.allowFormSubmit;
       document.getElementById("rules-enable").value = options.rulesEnable || "";
       document.getElementById("rules-disable").value = options.rulesDisable || "";
     });
@@ -16,12 +18,16 @@
   function saveOptions() {
     let showTabIcon = !!document.getElementById("show-tab-icon").checked;
     let autoLockPinnedTabs = !!document.getElementById("auto-lock-pinned-tabs").checked;
+    let openLinksInNewTab = !!document.getElementById("open-links-in-new-tab").checked;
+    let allowFormSubmit = !!document.getElementById("allow-form-submit").checked;
     let rulesEnable = document.getElementById("rules-enable").value;
     let rulesDisable = document.getElementById("rules-disable").value;
 
     chrome.storage.sync.set({ options: {
       showTabIcon,
       autoLockPinnedTabs,
+      openLinksInNewTab,
+      allowFormSubmit,
       rulesEnable,
       rulesDisable
     }}, () => {
