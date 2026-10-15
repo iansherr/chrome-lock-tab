@@ -3,7 +3,7 @@ chrome.action.onClicked.addListener((tab) => {
 
   chrome.storage.local.get(key, ({ [key]: isLocked }) => {
     chrome.storage.sync.get("options", ({ options = {} }) => {
-      setIsLocked(tab, !isLocked, options.showTabIcon);
+      setIsLocked(tab, !isLocked, options);
     });
   });
 });
@@ -21,15 +21,76 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.pinned) {
     chrome.storage.sync.get("options", ({ options = {} }) => {
       if (options.autoLockPinnedTabs === undefined || options.autoLockPinnedTabs) {
-        setIsLocked(tab, true, options.showTabIcon);
+        setIsLocked(tab, true, options);
       }
     });
   }
 });
 
+const refreshAlarmPrefix = "refresh_";
+const refreshBypassMillis = 5000;
+const refreshPresetMinutes = [1, 5, 15, 30, 60];
+
+chrome.runtime.onInstalled.addListener(() => {
+  setupRefreshMenu();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  setupRefreshMenu();
+  // Tab IDs are reassigned across browser restarts, so per-tab intervals
+  // cannot reattach. Drop them rather than firing at stale IDs.
+  pruneRefreshState();
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (!info.menuItemId.startsWith(refreshAlarmPrefix) || !tab?.id) {
+    return;
+  }
+
+  let minutes = Number(info.menuItemId.slice(refreshAlarmPrefix.length));
+  setTabRefresh(tab.id, Number.isInteger(minutes) && minutes > 0 ? minutes : 0);
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (!alarm.name.startsWith(refreshAlarmPrefix)) {
+    return;
+  }
+
+  let tabId = Number(alarm.name.slice(refreshAlarmPrefix.length));
+  if (!Number.isInteger(tabId)) {
+    return;
+  }
+
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError || !tab) {
+      clearTabRefresh(tabId);
+      return;
+    }
+
+    // Handshake first: only reload when the tab acknowledges the bypass.
+    // A locked tab that cannot be reached is never reloaded, so a refresh
+    // can never trigger the exit confirmation.
+    chrome.tabs.sendMessage(
+      tabId,
+      { message: "prepareRefresh", data: { bypassMillis: refreshBypassMillis } },
+      (response) => {
+        if (chrome.runtime.lastError || !response || !response.ack) {
+          return;
+        }
+
+        chrome.tabs.reload(tabId);
+      }
+    );
+  });
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  clearTabRefresh(tabId);
+});
+
 let currentColorScheme = "light";
 
-function setIsLocked(tab, isLocked, showTabIcon) {
+function setIsLocked(tab, isLocked, options = {}) {
   let key = `tab_${tab.id}`;
 
   chrome.storage.local.set({ [key]: isLocked }, async () => {
@@ -37,7 +98,8 @@ function setIsLocked(tab, isLocked, showTabIcon) {
       message: "setIsLocked",
       data: {
         isLocked: isLocked,
-        showTabIcon: showTabIcon === undefined ? true : !!showTabIcon,
+        showTabIcon: options.showTabIcon === undefined ? true : !!options.showTabIcon,
+        allowReload: !!options.allowReload,
       },
     });
 
@@ -61,7 +123,7 @@ function init(tab, data) {
 
   chrome.storage.sync.get("options", ({ options = {} }) => {
     if (tab.pinned && (options.autoLockPinnedTabs === undefined || options.autoLockPinnedTabs)) {
-      setIsLocked(tab, true, options.showTabIcon);
+      setIsLocked(tab, true, options);
       return;
     }
 
@@ -72,7 +134,7 @@ function init(tab, data) {
 
     let rulesEnable = parseRules(options.rulesEnable);
     if (rulesEnable.some((rule) => new RegExp(rule, "i").test(tab.url))) {
-      setIsLocked(tab, true, options.showTabIcon);
+      setIsLocked(tab, true, options);
     }
   });
 }
@@ -84,4 +146,66 @@ function parseRules(rules) {
       ?.map((rule) => rule.trim())
       ?.filter((rule) => !!rule) || []
   );
+}
+
+function setupRefreshMenu() {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: `${refreshAlarmPrefix}parent`,
+      title: "Auto-refresh tab",
+      contexts: ["action"],
+    });
+
+    chrome.contextMenus.create({
+      id: `${refreshAlarmPrefix}0`,
+      parentId: `${refreshAlarmPrefix}parent`,
+      title: "Off",
+      contexts: ["action"],
+    });
+
+    for (let minutes of refreshPresetMinutes) {
+      chrome.contextMenus.create({
+        id: `${refreshAlarmPrefix}${minutes}`,
+        parentId: `${refreshAlarmPrefix}parent`,
+        title: `Every ${minutes} minute${minutes === 1 ? "" : "s"}`,
+        contexts: ["action"],
+      });
+    }
+  });
+}
+
+function setTabRefresh(tabId, minutes) {
+  let alarmName = `${refreshAlarmPrefix}${tabId}`;
+
+  if (!minutes) {
+    clearTabRefresh(tabId);
+    return;
+  }
+
+  chrome.storage.local.set({ [alarmName]: minutes }, () => {
+    chrome.alarms.create(alarmName, { periodInMinutes: minutes });
+  });
+}
+
+function clearTabRefresh(tabId) {
+  let alarmName = `${refreshAlarmPrefix}${tabId}`;
+
+  chrome.alarms.clear(alarmName);
+  chrome.storage.local.remove(alarmName);
+}
+
+function pruneRefreshState() {
+  chrome.storage.local.get(null, (items) => {
+    let stale = Object.keys(items || {}).filter((key) => key.startsWith(refreshAlarmPrefix));
+
+    if (stale.length === 0) {
+      return;
+    }
+
+    chrome.storage.local.remove(stale);
+
+    for (let alarmName of stale) {
+      chrome.alarms.clear(alarmName);
+    }
+  });
 }
