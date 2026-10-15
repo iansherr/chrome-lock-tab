@@ -85,7 +85,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  clearTabRefresh(tabId);
+  clearTabRefresh(tabId, false);
 });
 
 let currentColorScheme = "light";
@@ -107,6 +107,8 @@ function setIsLocked(tab, isLocked, options = {}) {
       tabId: tab.id,
       path: `/images/${isLocked ? "locked" : "unlocked"}-${currentColorScheme}.png`,
     });
+
+    refreshTabIndicator(tab.id);
   });
 }
 
@@ -184,14 +186,46 @@ function setTabRefresh(tabId, minutes) {
 
   chrome.storage.local.set({ [alarmName]: minutes }, () => {
     chrome.alarms.create(alarmName, { periodInMinutes: minutes });
+    refreshTabIndicator(tabId);
   });
 }
 
-function clearTabRefresh(tabId) {
+function clearTabRefresh(tabId, updateIndicator = true) {
   let alarmName = `${refreshAlarmPrefix}${tabId}`;
 
   chrome.alarms.clear(alarmName);
-  chrome.storage.local.remove(alarmName);
+  chrome.storage.local.remove(alarmName, () => {
+    // The tab itself is gone when this runs from onRemoved; skip the update.
+    if (updateIndicator) {
+      refreshTabIndicator(tabId);
+    }
+  });
+}
+
+// Keep the toolbar button truthful per tab: a ↻ badge while auto-refresh is
+// on, and a tooltip that always states the lock + refresh state, whether
+// enabled or not.
+function refreshTabIndicator(tabId) {
+  chrome.storage.local.get([`tab_${tabId}`, `${refreshAlarmPrefix}${tabId}`], (items = {}) => {
+    let isLocked = !!items[`tab_${tabId}`];
+    let minutes = items[`${refreshAlarmPrefix}${tabId}`];
+    let parts = [];
+
+    if (isLocked) {
+      parts.push("Locked");
+    }
+
+    if (minutes) {
+      parts.push(`Auto-refresh every ${minutes} minute${minutes === 1 ? "" : "s"}`);
+    }
+
+    chrome.action.setTitle({
+      tabId: tabId,
+      title: parts.length ? `Lock Tab: ${parts.join(" \u2022 ")}` : "Lock Tab",
+    });
+
+    chrome.action.setBadgeText({ tabId: tabId, text: minutes ? "\u21BB" : "" });
+  });
 }
 
 function pruneRefreshState() {
