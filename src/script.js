@@ -131,9 +131,12 @@
       });
   }
 
-  // "new tab" destinations: configured patterns, plus other sites when enabled.
+  // "new tab" destinations: a pattern may match the link's destination (full URL, or just
+  // path + query) or the page the link is on, so a rule naming a board or editor page makes
+  // every link inside it open in a new tab. Plus other sites when enabled.
   function wantsNewTab(url) {
-    if (newTabPatterns.some((re) => re.test(url.pathname + url.search))) {
+    const targets = [url.href, url.pathname + url.search, location.href];
+    if (newTabPatterns.some((re) => targets.some((target) => re.test(target)))) {
       return true;
     }
     return externalLinksInNewTab && url.origin !== location.origin;
