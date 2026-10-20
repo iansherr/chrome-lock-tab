@@ -100,6 +100,8 @@ function setIsLocked(tab, isLocked, options = {}) {
         isLocked: isLocked,
         showTabIcon: options.showTabIcon === undefined ? true : !!options.showTabIcon,
         allowReload: !!options.allowReload,
+        openLinksInNewTab: !!options.openLinksInNewTab,
+        allowFormSubmit: !!options.allowFormSubmit,
       },
     });
 
