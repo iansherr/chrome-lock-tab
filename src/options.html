@@ -33,6 +33,16 @@
       <div class="row my-4">
         <div class="col">
           <div class="form-group">
+            <input id="allow-reload" type="checkbox" class="form-check-input" />
+            <label for="allow-reload" class="form-check-label">Allow keyboard reload without confirmation</label>
+            <div class="form-text">When a tab is locked, F5 / Ctrl+R / Cmd+R reloads without asking, and the tab stays locked. For unattended refresh, use the extension's Auto-refresh tab menu instead (see below).</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row my-4">
+        <div class="col">
+          <div class="form-group">
             <input id="open-links-in-new-tab" type="checkbox" class="form-check-input" />
             <label for="open-links-in-new-tab" class="form-check-label">Keep locked tab in place: open links in new tabs</label>
             <div class="form-text">When a tab is locked, plain left-clicks on links open in a new tab instead of navigating the locked tab.</div>
@@ -45,8 +55,25 @@
           <div class="form-group">
             <input id="allow-form-submit" type="checkbox" class="form-check-input" />
             <label for="allow-form-submit" class="form-check-label">Allow searches and forms without confirmation</label>
-            <div class="form-text">When a tab is locked, submitting a form (e.g. WordPress search) navigates without asking, and the tab stays locked.</div>
+            <div class="form-text">When a tab is locked, submitting any form (e.g. WordPress search) navigates without asking, and the tab stays locked. Same-site links and forms already do this by default.</div>
           </div>
+        </div>
+      </div>
+
+      <div class="row my-4">
+        <div class="col">
+          <h2 class="h5">Auto-refresh</h2>
+          <p class="mb-1">
+            Right-click the Lock Tab toolbar icon on any tab and choose
+            <strong>Auto-refresh tab</strong> to reload it every 1&ndash;60 minutes.
+            A refreshing tab shows a <strong>&#x21BB;</strong> badge on the toolbar icon,
+            and hovering the icon always states that tab's lock and refresh state.
+          </p>
+          <ul class="mb-0">
+            <li>Refreshes never ask for confirmation, and the tab stays locked.</li>
+            <li>Refresh is per-tab and independent of locking; turn it Off from the same menu. It is cleared when the tab closes or the browser restarts.</li>
+            <li>Other timer extensions that reload the page themselves will still trigger the confirmation on a locked tab &mdash; Chrome gives the extension no way to tell their reloads apart from closing the tab. Use the built-in menu above for unattended refresh.</li>
+          </ul>
         </div>
       </div>
 
