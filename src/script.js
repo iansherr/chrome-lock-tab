@@ -10,6 +10,15 @@
   let reloadKeyBypassUntil = 0;
   let titleObserver = null;
 
+  // In-page navigation: a link click or form submit that stays on the site is not "leaving".
+  // Edit-type URLs (and, optionally, other sites) open in a new tab so the locked page stays put.
+  const navigationIntentMillis = 1500;
+  const defaultNewTabRules = ["/wp-admin/post\\.php", "/wp-admin/post-new\\.php", "[?&]action=edit"];
+  let allowInPageNavigation = true;
+  let externalLinksInNewTab = true;
+  let newTabPatterns = compileRules(defaultNewTabRules);
+  let navigationIntentUntil = 0;
+
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch (request.message) {
       case "prepareRefresh":
@@ -21,6 +30,16 @@
       case "setIsLocked":
         isLocked = request.data.isLocked;
         allowReload = !!request.data.allowReload;
+        // Older callers don't send these: keep the defaults above in that case.
+        if (request.data.allowInPageNavigation !== undefined) {
+          allowInPageNavigation = !!request.data.allowInPageNavigation;
+        }
+        if (request.data.externalLinksInNewTab !== undefined) {
+          externalLinksInNewTab = !!request.data.externalLinksInNewTab;
+        }
+        if (typeof request.data.newTabRules === "string") {
+          newTabPatterns = compileRules(request.data.newTabRules.split("\n"));
+        }
 
         // Some pages like Google Meet change their title on load, which can result in visual
         // weirdness if we also try to change it too early, so we wait a bit to avoid this.
@@ -59,6 +78,12 @@
         return;
       }
 
+      // A same-site link click or form submit (e.g. a search) is navigation, not an exit.
+      if (allowInPageNavigation && Date.now() < navigationIntentUntil) {
+        navigationIntentUntil = 0;
+        return;
+      }
+
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -88,6 +113,121 @@
 
       if (isF5 || isReloadShortcut) {
         reloadKeyBypassUntil = Date.now() + reloadKeyBypassMillis;
+      }
+    },
+    true
+  );
+
+  function compileRules(lines) {
+    return lines
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .flatMap((line) => {
+        try {
+          return [new RegExp(line, "i")];
+        } catch (e) {
+          return []; // ignore an invalid pattern rather than breaking every click
+        }
+      });
+  }
+
+  // "new tab" destinations: a pattern may match the link's destination (full URL, or just
+  // path + query) or the page the link is on, so a rule naming a board or editor page makes
+  // every link inside it open in a new tab. Plus other sites when enabled.
+  function wantsNewTab(url) {
+    const targets = [url.href, url.pathname + url.search, location.href];
+    if (newTabPatterns.some((re) => targets.some((target) => re.test(target)))) {
+      return true;
+    }
+    return externalLinksInNewTab && url.origin !== location.origin;
+  }
+
+  function isWebUrl(url) {
+    return url.protocol === "http:" || url.protocol === "https:";
+  }
+
+  window.addEventListener(
+    "click",
+    (event) => {
+      if (!isLocked || event.defaultPrevented || event.button !== 0) {
+        return;
+      }
+      // Modified clicks already open a new tab/window in the browser.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+
+      const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!anchor || anchor.hasAttribute("download")) {
+        return;
+      }
+      if (anchor.target && anchor.target !== "_self") {
+        return; // already opens elsewhere
+      }
+
+      let url;
+      try {
+        url = new URL(anchor.href, location.href);
+      } catch (e) {
+        return;
+      }
+      if (!isWebUrl(url)) {
+        return;
+      }
+      // Same document, only the #hash changes: no navigation at all.
+      if (url.origin === location.origin && url.pathname === location.pathname && url.search === location.search) {
+        return;
+      }
+
+      if (wantsNewTab(url)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        window.open(url.href, "_blank", "noopener");
+        return;
+      }
+      if (url.origin === location.origin) {
+        navigationIntentUntil = Date.now() + navigationIntentMillis;
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    "submit",
+    (event) => {
+      if (!isLocked || event.defaultPrevented || !(event.target instanceof HTMLFormElement)) {
+        return;
+      }
+      const form = event.target;
+      let url;
+      try {
+        url = new URL(form.getAttribute("action") ? form.action : location.href, location.href);
+      } catch (e) {
+        return;
+      }
+      if (!isWebUrl(url)) {
+        return;
+      }
+
+      // For a GET form the destination includes the query the form will add.
+      const probe = form.method && form.method.toLowerCase() === "get" ? new URL(url.href) : url;
+      if (probe !== url) {
+        new FormData(form).forEach((value, key) => {
+          if (typeof value === "string") probe.searchParams.append(key, value);
+        });
+      }
+
+      if (wantsNewTab(probe)) {
+        // Submit into a new tab (works for POST too), then restore the form.
+        const previousTarget = form.target;
+        form.target = "_blank";
+        setTimeout(() => {
+          form.target = previousTarget;
+        }, 0);
+        return;
+      }
+      if (url.origin === location.origin) {
+        navigationIntentUntil = Date.now() + navigationIntentMillis;
       }
     },
     true
